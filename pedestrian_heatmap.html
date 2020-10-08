@@ -1,0 +1,353 @@
+
+<!DOCTYPE html><meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta content="utf-8" http-equiv="encoding">
+<head>
+
+<!-- CSS only -->
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" integrity="sha384-JcKb8q3iqJ61gNV9KGb8thSsNjpSL0n8PARn9HuZOnIxN0hoP+VmmDGMN5t9UJ0Z" crossorigin="anonymous">
+
+<!-- JS, Popper.js, and jQuery -->
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js" integrity="sha384-9/reFTGAW83EW2RDu2S0VKaIzap3H66lZH81PoYlFhbGU+6BZp6G7niu735Sk7lN" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js" integrity="sha384-B4gt1jrGC7Jh4AgTPSdUtOBvfO8shuf57BaghqFfPlYxofvL8/KUEfYiJOMMV+rV" crossorigin="anonymous"></script>
+
+ <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+   integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+   crossorigin=""/>
+
+
+ <!-- Make sure you put this AFTER Leaflet's CSS -->
+ <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+   integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+   crossorigin=""></script>
+
+  <script src="/static/js/heatmap.js"></script>
+  <script src="/static/js/leaflet_heatmap.js"></script>
+      <script src="/static/js/d3.v3.min.js"></script>
+
+        <title>Pedestrian counts during COVID - Melbourne</title>
+        
+ <style>
+
+body {
+        padding: 0;
+        margin: 0;
+    }
+ html, body, #mapid {
+        height: 70%;
+        width: 85%;/*margin-left:20px;margin-right:20px;*/
+    }
+#mapid {position:absolute;}
+            
+#linechart {padding:10pt;}
+.slider-tray {
+  position: absolute;
+  width: 100%;
+  height: 6px;
+  border: solid 1px #ccc;
+  border-top-color: #aaa;
+  border-radius: 4px;
+  background-color: #f0f0f0;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.slider-handle {
+  position: absolute;
+  top: 3px;
+}
+
+.slider-handle-icon {
+  width: 14px;
+  height: 14px;
+  border: solid 1px #aaa;
+  position: absolute;
+  border-radius: 10px;
+  background-color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  top: -7px;
+  left: -7px;
+}
+            
+
+ .line {
+  fill: none;
+  stroke: steelblue;
+  stroke-width: 1px;
+  
+}
+        
+.axis path,
+.axis line {
+    fill: none;
+    stroke: grey;
+    stroke-width: 1;
+    shape-rendering: crispEdges;
+   }
+.weektext { font-family: arial;font-size:14pt;} 
+            </style>
+
+
+</head>
+   
+<body>
+<a href="/">Home </a>
+    <div class="container" style="position:relative;margin-bottom:20px;margin-top:20px">
+        
+          <div class="slider"></div>Toggle slider to see heatmap over time.
+          <div  id="sliderdiv"><input id="slider" type="range" min="1" max="37" step="1" value="1"/></div><div id="weektext"></div>
+        </div>
+    
+    <div class="container">    
+<div  id="linechart"></div>
+        <div id="mapid" ></div>
+
+    </div>
+</body>
+<script> 
+
+    
+var margin = 40,
+    width = parseInt(d3.select("#mapid").style("width")) * 0.35 - margin,
+    height = parseInt(d3.select("#mapid").style("height")) * 0.7 - margin * 2;
+
+
+var parseTime = d3.time.format("%Y-%m-%d").parse; //5/01/2020
+var baselayer = new L.TileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+    maxZoom: 14,
+    minZoom: 14,
+    // preferCanvas: true
+})
+var mymap = new L.Map('mapid').setView([-37.8136, 144.9631], 14);
+mymap.addLayer(baselayer)
+var dataset;
+var nested;
+var nested2;
+d3.json("/static/data/combined.json", function(dd) {
+    dataset = dd;
+    nested = d3.nest().key(function(dd) {
+        return dd.week;
+    }).entries(dataset);
+    var nested2 = d3.nest().key(function(d) {
+            return d.week;
+        })
+        .rollup(function(d) {
+            return d3.sum(d, function(g) {
+                return g.counts;
+            });
+        })
+        .entries(dd);
+
+    var nested2 = nested2.map(function(d) {
+        return {
+            key: parseTime(d.key),
+            values: +d.values
+        };
+    });
+    
+            sum=0;
+        vals=nested[0].values;
+        for (i in vals){sum+=+vals[i].counts;}
+        var nf = new Intl.NumberFormat();
+    var textdata= d3.select("#weektext").append("text").text(nested[0].key+":  " + nf.format(sum));
+
+    var x = d3.time.scale().nice(d3.time.day).range([0, 0.8 * width])
+    var y = d3.scale.linear().range([height / 2, 0]);
+    var xAxis = d3.svg.axis().scale(x).orient("bottom").tickFormat(d3.time.format('%b'));
+    var yAxis = d3.svg.axis().scale(y).orient("left").ticks(8, ".0s");
+    var line = d3.svg.line().x(function(d) {
+            return x(d.key);
+        })
+        .y(function(d) {
+            return y(d.values);
+        });
+    var timeformat = d3.time.format("%Y-%m-%d");
+
+    var svg = d3.select(mymap.getPanes().overlayPane)
+        .append("svg")
+        .attr("transform", "translate(" + 2.1 * width + ",10)")
+        .style("opacity", "0.8")
+        .style("background-color", "white")
+        .attr("width", width)
+        .attr("height", height / 2 + margin + margin)
+        .append("g")
+        .attr("transform", "translate(" + margin + "," + margin + ")");
+    x.domain([d3.min(nested2, function(d) {
+        return d.key;
+    }), d3.max(nested2, function(d) {
+        return d.key;
+    })]);
+    y.domain([d3.min(nested2, function(d) {
+        return d.values - 5;
+    }), d3.max(nested2, function(d) {
+        return d.values + 5;
+    })]);
+    svg.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(0," + height / 2 + ")")
+        .attr("font-size", "11pt")
+        .call(xAxis);
+    svg.append("g")
+        .attr("class", "y axis")
+        // .attr("transform", "translate(0," + 40 + ")")
+        .attr("font-size", "11pt")
+        .call(yAxis)
+        .append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("y", 6)
+        .attr("dy", ".71em")
+        .style("text-anchor", "end");
+
+    var mouseover = function(d) {
+        tooltip
+            .style("opacity", 1)
+        d3.select(this)
+            .style("stroke", "black")
+            .style("opacity", 1)
+    }
+    var mousemove = function(d) {
+        tooltip
+            .html('Week starting ' + timeformat(d.key) + " Counts: " + nf.format(d.values))
+            .style("left", (d3.mouse(this)[0] + 70) + "px")
+            .style("top", (d3.mouse(this)[1]) + "px")
+    }
+    var mouseleave = function(d) {
+        tooltip
+            .style("opacity", 0)
+        d3.select(this)
+            .style("stroke", "none")
+            .style("opacity", 0.8)
+    }
+    var tooltip = d3.select("#linechart")
+        .append("div")
+        .style("opacity", 0)
+        .attr("class", "tooltip")
+        .style("background-color", "white")
+        .style("border", "solid")
+        .style("border-width", "2px")
+        .style("border-radius", "5px")
+        .style("padding", "5px")
+    svg.append("path")
+        .datum(nested2)
+        .attr("class", "line")
+        .style("stroke", "fuschia")
+        .style("stroke-width", "2px")
+        .attr("d", line)
+    var dots = svg.selectAll("dot")
+        .data(nested2)
+        .enter().append("circle")
+        .attr("r", 4)
+        .style("fill", "#00b39a")
+        .attr("cx", function(d) {
+            return x(d.key);
+        })
+        .attr("cy", function(d) {
+            return y(d.values);
+        })
+        .on("mouseover", mouseover)
+        .on("mousemove", mousemove)
+        .on("mouseleave", mouseleave);
+
+
+
+})
+var sensors = []
+
+d3.csv("/static/data/melbourne_sensor_locations.csv", function(data) {
+    sensors = data;
+
+    var array = get_cfg(2, nested);
+    var cfg = {
+        "radius": 0.0015,
+        "maxOpacity": .8,
+        "scaleRadius": true,
+        "useLocalExtrema": true,
+        latField: 'lat',
+        lngField: 'long',
+        valueField: 'counts',
+        gradient: {
+            '.5': 'rgb(5,8,184)',
+            '.8': 'rgb(191,28,253)',
+            '.95': 'rgb(254,165,253)'
+        }
+    }
+    array.data = array;
+    array.max = 30;
+    var heatmapLayer = new HeatmapOverlay(cfg);
+    heatmapLayer.setData(array);
+    mymap.addLayer(heatmapLayer);
+
+    d3.select("#slider").on("change", function(d) {
+        currentValue = this.value;console.log(currentValue);
+        update_circs(this.value);
+
+        console.log(this.value);
+        var newarray = get_cfg(currentValue, nested);
+        newarray.data = newarray;
+        newarray.max = 50;
+        heatmapLayer.setData(newarray);
+        mymap.addLayer(heatmapLayer);
+        uniquedate = d3.set(newarray.map(function(d) {
+            return d.date
+        })).values();
+        //console.log(this.value);
+        sum=0;
+        vals=nested[currentValue].values;
+        for (i in vals){sum+=+vals[i].counts;}
+        var nf = new Intl.NumberFormat();
+        
+       d3.select("#weektext").text(nested[currentValue].key+":   "+nf.format(sum));       //    return d;
+
+    })
+
+    function update_circs(value) {
+
+        d3.selectAll("circle").attr("r", 4);
+        circles = d3.selectAll("circle")[0];
+
+        //circles.each.setAttribute("r",4);
+        //  circles.setAttribute("r",4);
+        c = circles[value];
+        c.setAttribute("r", 10); //mouseover;
+
+    }
+
+    
+});
+
+function get_cfg(number, nested) {
+        // console.log(series1)
+        var series1 = nested[number].values
+        var map_array = []
+        for (i = 0; i < series1.length; i++) {
+            sensor_array = search_sensor_id(series1[i].sensor_id, sensors);
+            //   console.log('sensor array'+sensor_array);console.log(series1);
+            map_array.push({
+                lat: sensor_array.latitude,
+                long: sensor_array.longitude,
+                name: sensor_array.address,
+                counts: series1[i].counts,
+                date: series1[i].weekdate,
+            });
+            // map_array["hourly_counts"]=d[i].Hourly_Counts;
+            ;
+        }
+        console.log(map_array)
+
+        function search_sensor_id(sid, array) {
+            for (var i = 0; i < array.length; i++) {
+                if (array[i].sensor_id == sid) {
+                    return array[i];
+                }
+            }
+        }
+
+        return map_array;
+    };
+
+
+   </script>
+
+   
+   </html>
